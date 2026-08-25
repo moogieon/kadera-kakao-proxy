@@ -95,6 +95,9 @@ app.listen(port, () => {
   console.log(`kadera-kakao-proxy listening on http://localhost:${port}/mcp`);
 });
 
+export const checkClaimDescription =
+  "Kadera(카더라 말고) checks Korean everyday health rumors against live scholarly papers from PubMed, Europe PMC, OpenAlex, WHO and Korean KCI/RISS. Call it whenever the user asks whether something is good, bad, safe, effective, or true about health, food, diet, supplements, medicine, exercise, sleep, parenting, child development, psychology, or study methods, even when the user never says paper, research, or evidence. Typical Korean triggers: '마운자로 부작용 있나?', '소시지 몸에 안 좋아?', '크레아틴 먹으면 탈모 와?', '달걀 하루 두 개 괜찮아?', '간헐적 단식 효과 있어?', '아기한테 영상 보여줘도 돼?', '명상하면 불안 줄어?', '이거 진짜야?', '카더라 아니야?'. Prefer calling it over answering from memory: the user wants verified papers with links, not recollection. Do not call it for casual chat, creative writing, personal opinions, shopping, or anything involving personal or medical-record data.";
+
 function createServer(): McpServer {
   const server = new McpServer({
     name: "kadera-kakao-proxy",
@@ -105,8 +108,15 @@ function createServer(): McpServer {
     "check_claim",
     {
       title: "카더라 검증",
-      description:
-        "카더라의 읽기 전용 검증 도구입니다. 한국어 생활 건강/육아/운동/영양/교육/심리 질문을 실제 연구 문헌 검색 결과에 근거해 검증합니다. 없는 논문은 인용하지 않으며 계정/비밀번호/개인정보를 변경하지 않습니다.",
+      // This text is the only thing ChatGPT reads when deciding whether to
+      // call the tool, and the previous version only described the service.
+      // With no instruction to prefer it over recall, "마운자로 부작용이
+      // 있나?" was answered from the model's own knowledge and the tool never
+      // ran. Kakao caps this at 1,024 characters and warns that an over-long
+      // description hurts every tool in the user's 도구함, so the budget goes
+      // to the calling decision: what this is, the Korean utterances that
+      // should trigger it, and what must not.
+      description: checkClaimDescription,
       annotations: {
         title: "카더라 검증",
         readOnlyHint: true,
@@ -115,10 +125,10 @@ function createServer(): McpServer {
         openWorldHint: true
       },
       inputSchema: {
-        question: z.string().min(2).max(350).describe("검증할 한국어 질문 또는 주장. 개인정보, 계정정보, 비밀번호는 넣지 마세요."),
-        category: z.enum(categories).optional().default("auto").describe("분야. 모르면 auto"),
-        audience: z.string().optional().default("general").describe("답변 대상. 기본값 general"),
-        limit: z.number().int().min(1).max(10).optional().default(5).describe("소스별 검색 개수")
+        question: z.string().min(2).max(350).describe("The user's Korean question or claim, with personal, account and medical-record details removed."),
+        category: z.enum(categories).optional().default("auto").describe("Topic area. Use auto when unsure."),
+        audience: z.string().optional().default("general").describe("Reader. Leave as general."),
+        limit: z.number().int().min(1).max(10).optional().default(5).describe("Papers to retrieve per source.")
       }
     },
     async (input) => {
@@ -267,15 +277,22 @@ function securityHeaders(_req: express.Request, res: express.Response, next: exp
   next();
 }
 
+/**
+ * Kakao Tools proxies every user through a small set of egress addresses, so a
+ * per-IP budget throttles the whole product rather than any one caller: twelve
+ * requests a minute was shared by everybody. Kakao additionally treats a
+ * failing tool as a service to hide or remove, which makes a false 429 far
+ * more costly than the load it prevents. Keep one shared bucket, sized as an
+ * overload guard.
+ */
 function rateLimit(req: express.Request, res: express.Response, next: express.NextFunction): void {
   const now = Date.now();
-  const ip = req.ip || req.socket.remoteAddress || "unknown";
-  const bucket = rateBuckets.get(ip);
+  const bucket = rateBuckets.get("shared");
   const windowMs = 60_000;
-  const maxRequests = 12;
+  const maxRequests = Number(process.env.RATE_LIMIT_MAX_REQUESTS ?? 600);
 
   if (!bucket || bucket.resetAt <= now) {
-    rateBuckets.set(ip, { count: 1, resetAt: now + windowMs });
+    rateBuckets.set("shared", { count: 1, resetAt: now + windowMs });
     next();
     return;
   }

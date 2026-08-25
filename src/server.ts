@@ -46,8 +46,14 @@ app.use(cors);
 app.use(securityHeaders);
 app.use(rateLimit);
 
+/** Lets a rollout be confirmed by asking rather than by probing behaviour. */
+const buildCommit = (process.env.GIT_COMMIT
+  ?? process.env.SOURCE_COMMIT
+  ?? process.env.RAILWAY_GIT_COMMIT_SHA
+  ?? "unknown").slice(0, 12);
+
 app.get("/healthz", (_req, res) => {
-  res.json({ ok: true, name: "kadera-kakao-proxy", backend: backendUrl });
+  res.json({ ok: true, name: "kadera-kakao-proxy", backend: backendUrl, commit: buildCommit });
 });
 
 app.post("/mcp", async (req, res) => {

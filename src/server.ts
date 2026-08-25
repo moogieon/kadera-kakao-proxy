@@ -77,7 +77,7 @@ app.listen(port, () => {
 });
 
 export const checkClaimDescription =
-  "Kadera(카더라 말고) checks Korean everyday health rumors against live scholarly papers from PubMed, Europe PMC, OpenAlex, WHO and Korean KCI/RISS. Call it whenever the user asks about or repeats a claim about health, food, diet, supplements, medicine, exercise, sleep, parenting, child development, psychology, or study methods, even when the user never says paper, research, or evidence. A rumour is usually stated, not asked: '마운자로 부작용이 있다는데', '소시지가 몸에 안 좋대', '크레아틴 먹으면 탈모 온다던데', '계란은 하루 두 개까지래', '간헐적 단식이 효과 있다더라' all need verifying, exactly like '이거 진짜야?', '카더라 아니야?', '명상하면 불안 줄어?'. Treat a claim the user reports hearing as a request to check it. Prefer calling this over answering from memory: the user wants papers with links, not recollection. Do not call it for casual chat, creative writing, personal opinions, shopping, or anything involving personal or medical-record data.";
+  "Kadera(카더라 말고) retrieves real scholarly papers for Korean questions about health, food, diet, supplements, medicine, exercise, sleep, parenting, child development, psychology and study methods. It searches PubMed, Europe PMC, OpenAlex, WHO and Korean KCI/RISS live and returns the papers with links; it does not answer from a model's memory. Call it for any of these forms, even without the words paper or research: a question ('마운자로 부작용 있나?', '계란 하루 두 개 괜찮아?'), a claim the user repeats ('소시지가 몸에 안 좋대', '크레아틴 먹으면 탈모 온다던데'), curiosity about a topic ('간헐적 단식에 대해 궁금해', '피톤치드 알려줘'), or a request to verify ('이거 진짜야?', '카더라 아니야?'). Treat a claim the user reports hearing, and a topic they say they are curious about, as a request to check it. Prefer calling this over answering from memory: the user wants papers with links. Do not call it for casual chat, creative writing, personal opinions, shopping, or personal or medical-record data.";
 
 function createServer(): McpServer {
   const server = new McpServer({
@@ -103,15 +103,31 @@ function createServer(): McpServer {
         idempotentHint: false,
         openWorldHint: true
       },
+      // Only the question is required. The previous schema demanded an English
+      // scholarly query up front, and the model stopped calling: for a
+      // question it believes it can answer, composing a search string first is
+      // a cost it will not pay. Everything else is optional and improves the
+      // result when supplied.
       inputSchema: {
-        question: z.string().min(2).max(350).describe("The user's question in Korean, with personal and medical-record details removed."),
-        academic_query: z.string().min(3).max(450).describe("Required. One English scholarly search query. Example: 'energy drink blood pressure systematic review'."),
-        topic_terms: z.array(z.string().min(2).max(100)).min(1).max(4).optional().describe("English name of the exact item asked about, plus true synonyms. Example: ['energy drink']."),
-        parent_terms: z.array(z.string().min(2).max(100)).min(1).max(3).optional().describe("Broader English exposure, only when the exact item has little direct research. Example for lard: ['saturated fat']."),
-        outcome_terms: z.array(z.string().min(2).max(100)).min(1).max(4).optional().describe("English name of the outcome asked about. Example: ['blood pressure'].")
+        question: z.string().min(2).max(350).describe("The user's question or the claim they repeated, in Korean. Remove personal and medical-record details."),
+        academic_query: z.string().min(3).max(450).optional().describe("Strongly recommended. One English scholarly search query for the claim. Example: 'tirzepatide adverse events systematic review'. Without it the tool asks you for one."),
+        topic_terms: z.array(z.string().min(2).max(100)).min(1).max(4).optional().describe("English name of the exact item asked about, plus true synonyms. Example: ['tirzepatide']."),
+        outcome_terms: z.array(z.string().min(2).max(100)).min(1).max(4).optional().describe("English name of the outcome asked about. Example: ['adverse events'].")
       }
     },
-    async (input) => forwardToBackendMcp(input)
+    async (input) => {
+      // Answering the first call with a request rather than a refusal keeps
+      // the tool cheap to reach for: the model calls with the question alone,
+      // learns what to add, and the second call is the real search. The reply
+      // costs nothing -- no backend round trip.
+      if (typeof input.academic_query !== "string" || input.academic_query.trim().length < 3) {
+        return {
+          content: [{ type: "text", text: missingQueryNotice(String(input.question ?? "")) }],
+          isError: false
+        };
+      }
+      return forwardToBackendMcp(input);
+    }
   );
 
   return server;
@@ -131,6 +147,17 @@ function createServer(): McpServer {
  * The backend's result is returned untouched: it already carries the Korean
  * grounding rules, the term glossary and the crisis redirects.
  */
+/** Scholarly databases index English, so a Korean query retrieves nothing. */
+function missingQueryNotice(question: string): string {
+  return [
+    "검색을 실행하지 않았습니다. 논문 데이터베이스는 영어만 색인하므로 academic_query가 필요합니다.",
+    `이 질문(\"${question.slice(0, 60)}\")을 영어 학술 검색어로 바꿔 같은 도구를 한 번 더 호출하세요.`,
+    "의약품은 상품명이 아니라 성분명을 쓰세요. 예: '마운자로' → 'tirzepatide adverse events systematic review'.",
+    "topic_terms와 outcome_terms도 함께 주면 정확도가 올라갑니다.",
+    "사용자에게 관련 연구가 없다고 답하지 마세요."
+  ].join(" ");
+}
+
 async function forwardToBackendMcp(args: Record<string, unknown>): Promise<CallToolResult> {
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), backendTimeoutMs);

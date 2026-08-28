@@ -79,6 +79,9 @@ app.listen(port, () => {
 export const checkClaimDescription =
   "Kadera(카더라 말고) retrieves real scholarly papers for Korean questions about health, food, diet, supplements, medicine, exercise, sleep, parenting, child development, psychology and study methods. It searches PubMed, Europe PMC, OpenAlex, WHO and Korean KCI/RISS live and returns the papers with links; it does not answer from a model's memory. Call it for any of these forms, even without the words paper or research: a question ('마운자로 부작용 있나?', '계란 하루 두 개 괜찮아?'), a claim the user repeats ('소시지가 몸에 안 좋대', '크레아틴 먹으면 탈모 온다던데'), curiosity about a topic ('간헐적 단식에 대해 궁금해', '피톤치드 알려줘'), or a request to verify ('이거 진짜야?', '카더라 아니야?'). Treat a claim the user reports hearing, and a topic they say they are curious about, as a request to check it. Prefer calling this over answering from memory: the user wants papers with links. Do not call it for casual chat, creative writing, personal opinions, shopping, or personal or medical-record data.";
 
+export const paperDetailDescription =
+  "Kadera(카더라 말고) opens one paper previously returned by search_paper_evidence. Call it when the user mentions the displayed paper key, for example '1234-a 논문 자세히 알려줘', '1234-a 초록 번역해줘', or '1234-a 연구를 깊게 설명해줘'. Pass only that exact key. It returns the saved title, bibliographic record, source link, and complete available abstract for faithful Korean translation and explanation of the study design, participants, results, and limitations. Do not call it for a new topic search, do not guess a key, and do not describe an abstract as the full paper.";
+
 function createServer(): McpServer {
   const server = new McpServer({
     name: "kadera-kakao-proxy",
@@ -126,8 +129,27 @@ function createServer(): McpServer {
           isError: false
         };
       }
-      return forwardToBackendMcp(input);
+      return forwardToBackendMcp("search_paper_evidence", input);
     }
+  );
+
+  server.registerTool(
+    "get_paper_detail",
+    {
+      title: "선택 논문 자세히 보기",
+      description: paperDetailDescription,
+      annotations: {
+        title: "논문 상세·한국어 번역",
+        readOnlyHint: true,
+        destructiveHint: false,
+        idempotentHint: true,
+        openWorldHint: false
+      },
+      inputSchema: {
+        paper_id: z.string().min(6).max(10).describe("Paper key shown in a Kadera search result, for example '1234-a'. Brackets are optional.")
+      }
+    },
+    async (input) => forwardToBackendMcp("get_paper_detail", input)
   );
 
   return server;
@@ -158,7 +180,7 @@ function missingQueryNotice(question: string): string {
   ].join(" ");
 }
 
-async function forwardToBackendMcp(args: Record<string, unknown>): Promise<CallToolResult> {
+async function forwardToBackendMcp(toolName: string, args: Record<string, unknown>): Promise<CallToolResult> {
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), backendTimeoutMs);
 
@@ -173,7 +195,7 @@ async function forwardToBackendMcp(args: Record<string, unknown>): Promise<CallT
         jsonrpc: "2.0",
         id: 1,
         method: "tools/call",
-        params: { name: "search_paper_evidence", arguments: args }
+        params: { name: toolName, arguments: args }
       }),
       signal: controller.signal
     });

@@ -1,18 +1,19 @@
-import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
-import type { CallToolResult } from "@modelcontextprotocol/sdk/types.js";
+import { Server } from "@modelcontextprotocol/sdk/server/index.js";
+import {
+  CallToolRequestSchema,
+  ListToolsRequestSchema,
+  type CallToolResult,
+  type Tool
+} from "@modelcontextprotocol/sdk/types.js";
 import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/streamableHttp.js";
 import express from "express";
-import * as z from "zod/v4";
 
 const port = Number(process.env.PORT ?? 3000);
 const backendUrl = stripTrailingSlash(process.env.KADERA_BACKEND_URL ?? "https://kadera-malgo-production.up.railway.app");
 const backendTimeoutMs = Number(process.env.BACKEND_TIMEOUT_MS ?? 60000);
-const categories = ["auto", "health", "childcare", "education", "exercise", "nutrition", "psychology"] as const;
-
-type Category = (typeof categories)[number];
-
 const app = express();
 const rateBuckets = new Map<string, { count: number; resetAt: number }>();
+let backendToolsCache: { tools: Tool[]; expiresAt: number } | undefined;
 
 app.disable("x-powered-by");
 app.set("trust proxy", 1);
@@ -79,81 +80,94 @@ app.listen(port, () => {
 export const checkClaimDescription =
   "Kadera(카더라 말고) retrieves real scholarly papers for Korean questions about health, food, diet, supplements, medicine, exercise, sleep, parenting, child development, psychology and study methods. It searches PubMed, Europe PMC, OpenAlex, WHO and Korean KCI/RISS live and returns the papers with links; it does not answer from a model's memory. Call it for any of these forms, even without the words paper or research: a question ('마운자로 부작용 있나?', '계란 하루 두 개 괜찮아?'), a claim the user repeats ('소시지가 몸에 안 좋대', '크레아틴 먹으면 탈모 온다던데'), curiosity about a topic ('간헐적 단식에 대해 궁금해', '피톤치드 알려줘'), or a request to verify ('이거 진짜야?', '카더라 아니야?'). Treat a claim the user reports hearing, and a topic they say they are curious about, as a request to check it. Prefer calling this over answering from memory: the user wants papers with links. Do not call it for casual chat, creative writing, personal opinions, shopping, or personal or medical-record data.";
 
-export const paperDetailDescription =
-  "Kadera(카더라 말고) opens one paper previously returned by search_paper_evidence. Call it when the user mentions the displayed paper key, for example '1234-a 논문 자세히 알려줘', '1234-a 초록 번역해줘', or '1234-a 연구를 깊게 설명해줘'. Pass only that exact key. It returns the saved title, bibliographic record, source link, and complete available abstract for faithful Korean translation and explanation of the study design, participants, results, and limitations. Do not call it for a new topic search, do not guess a key, and do not describe an abstract as the full paper.";
+function createServer(): Server {
+  const server = new Server(
+    { name: "kadera-kakao-proxy", version: "0.1.0" },
+    { capabilities: { tools: { listChanged: true } } }
+  );
 
-function createServer(): McpServer {
-  const server = new McpServer({
-    name: "kadera-kakao-proxy",
-    version: "0.1.0"
-  });
+  // The backend owns the public tool manifest. A backend tool added later
+  // appears in Kakao without another proxy code change or redeploy. Search is
+  // the one deliberate override: keeping academic_query optional makes the
+  // first tool call cheap enough for the host to attempt.
+  server.setRequestHandler(ListToolsRequestSchema, async () => ({
+    tools: (await listBackendTools()).map((tool) =>
+      tool.name === "search_paper_evidence" ? searchToolDefinition : tool
+    )
+  }));
 
-  server.registerTool(
-    "search_paper_evidence",
-    {
-      title: "카더라 검증",
-      // This text is the only thing ChatGPT reads when deciding whether to
-      // call, and the previous version only described the service. With
-      // nothing saying when to reach for it, "마운자로 부작용이 있나?" was
-      // answered from the model's own knowledge and the tool never ran.
-      description: checkClaimDescription,
-      annotations: {
-        title: "카더라 검증",
-        readOnlyHint: true,
-        destructiveHint: false,
-        // The same question can return a different paper set: sources are
-        // live and a call that misses the search deadline omits them.
-        idempotentHint: false,
-        openWorldHint: true
-      },
-      // Only the question is required. The previous schema demanded an English
-      // scholarly query up front, and the model stopped calling: for a
-      // question it believes it can answer, composing a search string first is
-      // a cost it will not pay. Everything else is optional and improves the
-      // result when supplied.
-      inputSchema: {
-        question: z.string().min(2).max(350).describe("The user's question or the claim they repeated, in Korean. Remove personal and medical-record details."),
-        academic_query: z.string().min(3).max(450).optional().describe("Strongly recommended. One English scholarly search query for the claim. Example: 'tirzepatide adverse events systematic review'. Without it the tool asks you for one."),
-        topic_terms: z.array(z.string().min(2).max(100)).min(1).max(4).optional().describe("English name of the exact item asked about, plus true synonyms. Example: ['tirzepatide']."),
-        outcome_terms: z.array(z.string().min(2).max(100)).min(1).max(4).optional().describe("English name of the outcome asked about. Example: ['adverse events'].")
-      }
-    },
-    async (input) => {
-      // Answering the first call with a request rather than a refusal keeps
-      // the tool cheap to reach for: the model calls with the question alone,
-      // learns what to add, and the second call is the real search. The reply
-      // costs nothing -- no backend round trip.
-      if (typeof input.academic_query !== "string" || input.academic_query.trim().length < 3) {
-        return {
-          content: [{ type: "text", text: missingQueryNotice(String(input.question ?? "")) }],
-          isError: false
-        };
-      }
-      return forwardToBackendMcp("search_paper_evidence", input);
+  server.setRequestHandler(CallToolRequestSchema, async (request) => {
+    const toolName = request.params.name;
+    const input = (request.params.arguments ?? {}) as Record<string, unknown>;
+    const availableTools = await listBackendTools();
+
+    if (!availableTools.some((tool) => tool.name === toolName)) {
+      return {
+        content: [{ type: "text", text: `Unknown or unavailable tool: ${toolName}` }],
+        isError: true
+      };
     }
-  );
 
-  server.registerTool(
-    "get_paper_detail",
-    {
-      title: "선택 논문 자세히 보기",
-      description: paperDetailDescription,
-      annotations: {
-        title: "논문 상세·한국어 번역",
-        readOnlyHint: true,
-        destructiveHint: false,
-        idempotentHint: true,
-        openWorldHint: false
-      },
-      inputSchema: {
-        paper_id: z.string().min(6).max(10).describe("Paper key shown in a Kadera search result, for example '1234-a'. Brackets are optional.")
-      }
-    },
-    async (input) => forwardToBackendMcp("get_paper_detail", input)
-  );
+    if (
+      toolName === "search_paper_evidence"
+      && (typeof input.academic_query !== "string" || input.academic_query.trim().length < 3)
+    ) {
+      return {
+        content: [{ type: "text", text: missingQueryNotice(String(input.question ?? "")) }],
+        isError: false
+      };
+    }
+
+    return forwardToBackendMcp(toolName, input);
+  });
 
   return server;
 }
+
+const searchToolDefinition: Tool = {
+  name: "search_paper_evidence",
+  title: "카더라 검증",
+  description: checkClaimDescription,
+  annotations: {
+    title: "카더라 검증",
+    readOnlyHint: true,
+    destructiveHint: false,
+    idempotentHint: false,
+    openWorldHint: true
+  },
+  inputSchema: {
+    type: "object",
+    properties: {
+      question: {
+        type: "string",
+        minLength: 2,
+        maxLength: 350,
+        description: "The user's question or the claim they repeated, in Korean. Remove personal and medical-record details."
+      },
+      academic_query: {
+        type: "string",
+        minLength: 3,
+        maxLength: 450,
+        description: "Strongly recommended. One English scholarly search query for the claim. Example: 'tirzepatide adverse events systematic review'. Without it the tool asks you for one."
+      },
+      topic_terms: {
+        type: "array",
+        minItems: 1,
+        maxItems: 4,
+        items: { type: "string", minLength: 2, maxLength: 100 },
+        description: "English name of the exact item asked about, plus true synonyms. Example: ['tirzepatide']."
+      },
+      outcome_terms: {
+        type: "array",
+        minItems: 1,
+        maxItems: 4,
+        items: { type: "string", minLength: 2, maxLength: 100 },
+        description: "English name of the outcome asked about. Example: ['adverse events']."
+      }
+    },
+    required: ["question"]
+  }
+};
 
 /**
  * Forwards to the backend's own MCP tool instead of its web answer endpoint.
@@ -180,6 +194,40 @@ function missingQueryNotice(question: string): string {
   ].join(" ");
 }
 
+async function listBackendTools(): Promise<Tool[]> {
+  if (backendToolsCache && backendToolsCache.expiresAt > Date.now()) {
+    return backendToolsCache.tools;
+  }
+
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), Math.min(backendTimeoutMs, 10_000));
+
+  try {
+    const response = await fetch(`${backendUrl}/mcp`, {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        accept: "application/json, text/event-stream"
+      },
+      body: JSON.stringify({ jsonrpc: "2.0", id: 1, method: "tools/list", params: {} }),
+      signal: controller.signal
+    });
+    const body = await response.text();
+    if (!response.ok) throw new Error(`Backend ${response.status}: ${body.slice(0, 300)}`);
+    const result = readJsonRpcResult<{ tools: Tool[] }>(body);
+    if (!result?.tools?.length) throw new Error("Backend returned no public tools");
+
+    backendToolsCache = { tools: result.tools, expiresAt: Date.now() + 60_000 };
+    return result.tools;
+  } catch (error) {
+    // A brief backend restart should not erase tools from Kakao's manifest.
+    if (backendToolsCache?.tools.length) return backendToolsCache.tools;
+    throw error;
+  } finally {
+    clearTimeout(timeout);
+  }
+}
+
 async function forwardToBackendMcp(toolName: string, args: Record<string, unknown>): Promise<CallToolResult> {
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), backendTimeoutMs);
@@ -202,7 +250,7 @@ async function forwardToBackendMcp(toolName: string, args: Record<string, unknow
 
     const body = await response.text();
     if (!response.ok) throw new Error(`Backend ${response.status}: ${body.slice(0, 300)}`);
-    const result = readJsonRpcResult(body);
+    const result = readJsonRpcResult<CallToolResult>(body);
     if (!result) throw new Error("Backend returned no tool result");
     return result;
   } finally {
@@ -211,11 +259,11 @@ async function forwardToBackendMcp(toolName: string, args: Record<string, unknow
 }
 
 /** The backend answers over SSE, so the JSON-RPC envelope arrives on a data line. */
-function readJsonRpcResult(body: string): CallToolResult | undefined {
+function readJsonRpcResult<T>(body: string): T | undefined {
   for (const line of body.split(/\r?\n/)) {
     const payload = line.startsWith("data:") ? line.slice(5).trim() : line.trim();
     if (!payload.startsWith("{")) continue;
-    const parsed = JSON.parse(payload) as { result?: CallToolResult; error?: { message?: string } };
+    const parsed = JSON.parse(payload) as { result?: T; error?: { message?: string } };
     if (parsed.error) throw new Error(parsed.error.message ?? "Backend tool error");
     if (parsed.result) return parsed.result;
   }

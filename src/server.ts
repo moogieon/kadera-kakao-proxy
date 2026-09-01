@@ -100,7 +100,7 @@ function createServer(): Server {
   server.setRequestHandler(CallToolRequestSchema, async (request) => {
     const toolName = request.params.name;
     const upstreamToolName = backendToolName(toolName);
-    const isSearchTool = toolName === PUBLIC_SEARCH_TOOL_NAME || toolName === BACKEND_SEARCH_TOOL_NAME;
+    const isSearchTool = upstreamToolName === BACKEND_SEARCH_TOOL_NAME;
     const input = (request.params.arguments ?? {}) as Record<string, unknown>;
     const availableTools = await listBackendTools();
 

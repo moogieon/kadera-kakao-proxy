@@ -7,6 +7,13 @@ import {
 } from "@modelcontextprotocol/sdk/types.js";
 import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/streamableHttp.js";
 import express from "express";
+import {
+  BACKEND_SEARCH_TOOL_NAME,
+  PUBLIC_SEARCH_TOOL_NAME,
+  backendToolName,
+  publicToolList,
+  reinforceSearchResult
+} from "./toolManifest.js";
 
 const port = Number(process.env.PORT ?? 3000);
 const backendUrl = stripTrailingSlash(process.env.KADERA_BACKEND_URL ?? "https://kadera-malgo-production.up.railway.app");
@@ -77,31 +84,27 @@ app.listen(port, () => {
   console.log(`kadera-kakao-proxy listening on http://localhost:${port}/mcp`);
 });
 
-export const checkClaimDescription =
-  "Kadera(카더라 말고) retrieves real scholarly papers for Korean questions about health, food, diet, supplements, medicine, exercise, sleep, parenting, child development, psychology and study methods. It searches PubMed, Europe PMC, OpenAlex, WHO and Korean KCI/RISS live and returns the papers with links; it does not answer from a model's memory. Call it for any of these forms, even without the words paper or research: a question ('마운자로 부작용 있나?', '계란 하루 두 개 괜찮아?'), a claim the user repeats ('소시지가 몸에 안 좋대', '크레아틴 먹으면 탈모 온다던데'), curiosity about a topic ('간헐적 단식에 대해 궁금해', '피톤치드 알려줘'), or a request to verify ('이거 진짜야?', '카더라 아니야?'). Treat a claim the user reports hearing, and a topic they say they are curious about, as a request to check it. Prefer calling this over answering from memory: the user wants papers with links. Do not call it for casual chat, creative writing, personal opinions, shopping, or personal or medical-record data.";
-
 function createServer(): Server {
   const server = new Server(
     { name: "kadera-kakao-proxy", version: "0.1.0" },
     { capabilities: { tools: { listChanged: true } } }
   );
 
-  // The backend owns the public tool manifest. A backend tool added later
-  // appears in Kakao without another proxy code change or redeploy. Search is
-  // the one deliberate override: keeping academic_query optional makes the
-  // first tool call cheap enough for the host to attempt.
+  // The backend owns the available implementations. Search is the deliberate
+  // public override: its intent-first name and Korean description help Kakao
+  // select it, while optional academic_query keeps the first call cheap.
   server.setRequestHandler(ListToolsRequestSchema, async () => ({
-    tools: (await listBackendTools()).map((tool) =>
-      tool.name === "search_paper_evidence" ? searchToolDefinition : tool
-    )
+    tools: publicToolList(await listBackendTools())
   }));
 
   server.setRequestHandler(CallToolRequestSchema, async (request) => {
     const toolName = request.params.name;
+    const upstreamToolName = backendToolName(toolName);
+    const isSearchTool = toolName === PUBLIC_SEARCH_TOOL_NAME || toolName === BACKEND_SEARCH_TOOL_NAME;
     const input = (request.params.arguments ?? {}) as Record<string, unknown>;
     const availableTools = await listBackendTools();
 
-    if (!availableTools.some((tool) => tool.name === toolName)) {
+    if (!availableTools.some((tool) => tool.name === upstreamToolName)) {
       return {
         content: [{ type: "text", text: `Unknown or unavailable tool: ${toolName}` }],
         isError: true
@@ -109,7 +112,7 @@ function createServer(): Server {
     }
 
     if (
-      toolName === "search_paper_evidence"
+      isSearchTool
       && (typeof input.academic_query !== "string" || input.academic_query.trim().length < 3)
     ) {
       return {
@@ -118,56 +121,12 @@ function createServer(): Server {
       };
     }
 
-    return forwardToBackendMcp(toolName, input);
+    const result = await forwardToBackendMcp(upstreamToolName, input);
+    return isSearchTool ? reinforceSearchResult(result) : result;
   });
 
   return server;
 }
-
-const searchToolDefinition: Tool = {
-  name: "search_paper_evidence",
-  title: "카더라 검증",
-  description: checkClaimDescription,
-  annotations: {
-    title: "카더라 검증",
-    readOnlyHint: true,
-    destructiveHint: false,
-    idempotentHint: false,
-    openWorldHint: true
-  },
-  inputSchema: {
-    type: "object",
-    properties: {
-      question: {
-        type: "string",
-        minLength: 2,
-        maxLength: 350,
-        description: "The user's question or the claim they repeated, in Korean. Remove personal and medical-record details."
-      },
-      academic_query: {
-        type: "string",
-        minLength: 3,
-        maxLength: 450,
-        description: "Strongly recommended. One English scholarly search query for the claim. Example: 'tirzepatide adverse events systematic review'. Without it the tool asks you for one."
-      },
-      topic_terms: {
-        type: "array",
-        minItems: 1,
-        maxItems: 4,
-        items: { type: "string", minLength: 2, maxLength: 100 },
-        description: "English name of the exact item asked about, plus true synonyms. Example: ['tirzepatide']."
-      },
-      outcome_terms: {
-        type: "array",
-        minItems: 1,
-        maxItems: 4,
-        items: { type: "string", minLength: 2, maxLength: 100 },
-        description: "English name of the outcome asked about. Example: ['adverse events']."
-      }
-    },
-    required: ["question"]
-  }
-};
 
 /**
  * Forwards to the backend's own MCP tool instead of its web answer endpoint.

@@ -91,8 +91,8 @@ function createServer(): Server {
   );
 
   // The backend owns the available implementations. Search is the deliberate
-  // public override: its intent-first name and Korean description help Kakao
-  // select it, while optional academic_query keeps the first call cheap.
+  // public override: its branded intent name helps Kakao select it, and the
+  // question-only schema leaves scholarly query planning inside Kadera.
   server.setRequestHandler(ListToolsRequestSchema, async () => ({
     tools: publicToolList(await listBackendTools())
   }));
@@ -111,16 +111,6 @@ function createServer(): Server {
       };
     }
 
-    if (
-      isSearchTool
-      && (typeof input.academic_query !== "string" || input.academic_query.trim().length < 3)
-    ) {
-      return {
-        content: [{ type: "text", text: missingQueryNotice(String(input.question ?? "")) }],
-        isError: false
-      };
-    }
-
     const result = await forwardToBackendMcp(upstreamToolName, input);
     return isSearchTool ? reinforceSearchResult(result) : result;
   });
@@ -131,28 +121,13 @@ function createServer(): Server {
 /**
  * Forwards to the backend's own MCP tool instead of its web answer endpoint.
  *
- * The web endpoint plans the search with OpenAI, queries four databases and
- * extracts findings with a second model call, which measured 18.8s end to end
- * against Kakao's requirement of 100ms average and a 3,000ms p99 -- the tool
- * appeared stuck on "Kakao Tools 확인 중...". The MCP tool skips the planning
- * round trip because the host supplies the scholarly query, bounds retrieval,
- * and reuses a previous retrieval for a repeated question. Same call measured
- * 2.2s.
+ * The backend MCP now plans a compact scholarly query from the Korean question
+ * when the host does not supply one, then caches both the working plan and the
+ * retrieval. Legacy callers can still supply the old detailed arguments.
  *
  * The backend's result is returned untouched: it already carries the Korean
  * grounding rules, the term glossary and the crisis redirects.
  */
-/** Scholarly databases index English, so a Korean query retrieves nothing. */
-function missingQueryNotice(question: string): string {
-  return [
-    "검색을 실행하지 않았습니다. 논문 데이터베이스는 영어만 색인하므로 academic_query가 필요합니다.",
-    `이 질문(\"${question.slice(0, 60)}\")을 영어 학술 검색어로 바꿔 같은 도구를 한 번 더 호출하세요.`,
-    "의약품은 상품명이 아니라 성분명을 쓰세요. 예: '마운자로' → 'tirzepatide adverse events systematic review'.",
-    "topic_terms와 outcome_terms도 함께 주면 정확도가 올라갑니다.",
-    "사용자에게 관련 연구가 없다고 답하지 마세요."
-  ].join(" ");
-}
-
 async function listBackendTools(): Promise<Tool[]> {
   if (backendToolsCache && backendToolsCache.expiresAt > Date.now()) {
     return backendToolsCache.tools;

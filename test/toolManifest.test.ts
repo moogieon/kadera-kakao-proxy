@@ -27,19 +27,21 @@ test("publishes one intent-first search tool without retaining the old public na
   const tools = publicToolList(backendTools);
 
   assert.deepEqual(tools.map((tool) => tool.name), [PUBLIC_SEARCH_TOOL_NAME, "get_paper_detail"]);
-  assert.equal(PUBLIC_SEARCH_TOOL_NAME, "answer_health_question_with_papers");
-  assert.equal(tools[0]?.title, "건강 질문에 논문으로 답하기");
+  assert.equal(PUBLIC_SEARCH_TOOL_NAME, "kadera_factcheck_with_papers");
+  assert.equal(tools[0]?.title, "카더라 말고 — 논문 팩트체크");
   assert.deepEqual(tools[0]?.inputSchema.required, ["question"]);
-  assert.match(tools[0]?.description ?? "", /^사용자의 건강·의학/);
-  assert.match(tools[0]?.description ?? "", /마운자로 효과와 부작용이 궁금해/);
-  assert.match(tools[0]?.description ?? "", /논문을 말하지 않은 일반적인 건강 질문도/);
+  assert.deepEqual(Object.keys(tools[0]?.inputSchema.properties ?? {}), ["question"]);
+  assert.match(tools[0]?.description ?? "", /^카더라 말고\(Kadera\) 전용/);
+  assert.match(tools[0]?.description ?? "", /논문 키로 저장/);
+  assert.match(tools[0]?.description ?? "", /카더라 말고로/);
   assert.ok(Buffer.byteLength(checkClaimDescription, "utf8") < 1024);
   assert.doesNotMatch(tools[1]?.description ?? "", /search_paper_evidence/);
-  assert.match(tools[1]?.description ?? "", /answer_health_question_with_papers/);
+  assert.match(tools[1]?.description ?? "", /kadera_factcheck_with_papers/);
 });
 
 test("maps the public intent name to the existing backend implementation", () => {
   assert.equal(backendToolName(PUBLIC_SEARCH_TOOL_NAME), BACKEND_SEARCH_TOOL_NAME);
+  assert.equal(backendToolName("answer_health_question_with_papers"), BACKEND_SEARCH_TOOL_NAME);
   assert.equal(backendToolName("verify_health_claim"), BACKEND_SEARCH_TOOL_NAME);
   assert.equal(backendToolName(BACKEND_SEARCH_TOOL_NAME), BACKEND_SEARCH_TOOL_NAME);
   assert.equal(backendToolName("get_paper_detail"), "get_paper_detail");

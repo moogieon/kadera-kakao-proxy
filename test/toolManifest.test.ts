@@ -34,9 +34,17 @@ test("publishes one intent-first search tool without retaining the old public na
   assert.match(tools[0]?.description ?? "", /^카더라 말고\(Kadera\) 전용/);
   assert.match(tools[0]?.description ?? "", /논문 키로 저장/);
   assert.match(tools[0]?.description ?? "", /카더라 말고로/);
+  assert.match(tools[0]?.description ?? "", /완성 답변/);
   assert.ok(Buffer.byteLength(checkClaimDescription, "utf8") < 1024);
   assert.doesNotMatch(tools[1]?.description ?? "", /search_paper_evidence/);
   assert.match(tools[1]?.description ?? "", /kadera_factcheck_with_papers/);
+});
+
+test("does not prefix answer-writing instructions to an already completed Kadera answer", () => {
+  const answer = "## 현재 판단\n**한줄 결론:** 완성된 답변입니다.";
+  const completed = reinforceSearchResult({ content: [{ type: "text", text: answer }] });
+  assert.equal(completed.content[0]?.type, "text");
+  if (completed.content[0]?.type === "text") assert.equal(completed.content[0].text, answer);
 });
 
 test("maps the public intent name to the existing backend implementation", () => {

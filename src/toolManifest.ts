@@ -9,7 +9,7 @@ const LEGACY_PUBLIC_SEARCH_TOOL_NAMES = new Set([
 ]);
 
 export const checkClaimDescription =
-  "카더라 말고(Kadera) 전용 논문 팩트체크 도구입니다. 건강·의학·약·음식·영양·운동·수면·육아·심리 질문을 실제 논문으로 확인하고, 결과를 [1234-a] 형식의 논문 키로 저장해 다음 대화에서 다시 열 수 있습니다. 사용자가 '카더라 말고로 확인해줘', '논문 키로 저장해줘', '근거 논문을 자세히 보고 싶어', '이거 진짜야?'라고 말하거나 일반 건강 질문을 하면 호출하세요. 질문은 한국어 그대로 question에 넣으면 학술 검색어는 도구가 내부에서 만듭니다. 모델 지식이나 일반 웹검색으로 대신하지 마세요. 개인정보·진료기록, 일상 대화, 창작, 쇼핑에는 사용하지 않습니다.";
+  "카더라 말고(Kadera) 전용 논문 팩트체크 도구입니다. 건강·의학·약·음식·영양·운동·수면·육아·심리 질문을 실제 논문으로 확인하고, 결과를 [1234-a] 형식의 논문 키로 저장해 다음 대화에서 다시 열 수 있습니다. 사용자가 '카더라 말고로 확인해줘', '논문 키로 저장해줘', '근거 논문을 자세히 보고 싶어', '이거 진짜야?'라고 말하거나 일반 건강 질문을 하면 호출하세요. 질문은 한국어 그대로 question에 넣으면 학술 검색어는 도구가 내부에서 만듭니다. 모델 지식이나 일반 웹검색으로 대신하지 마세요. 반환되는 Markdown은 완성 답변이므로 섹션·표·논문 키·링크를 생략하거나 짧게 재작성하지 마세요. 개인정보·진료기록, 일상 대화, 창작, 쇼핑에는 사용하지 않습니다.";
 
 export const searchToolDefinition: Tool = {
   name: PUBLIC_SEARCH_TOOL_NAME,
@@ -65,6 +65,7 @@ export function reinforceSearchResult(result: CallToolResult): CallToolResult {
     content: result.content.map((item) => {
       if (prefixed || item.type !== "text") return item;
       prefixed = true;
+      if (item.text.trimStart().startsWith("## 현재 판단")) return item;
       return { ...item, text: `${finalAnswerRules}\n\n${item.text}` };
     })
   };

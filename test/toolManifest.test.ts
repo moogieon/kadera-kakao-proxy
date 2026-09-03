@@ -23,22 +23,24 @@ const backendTools: Tool[] = [
   }
 ];
 
-test("publishes the canonical evidence-search name with Kadera branding", () => {
+test("publishes the broad Kadera fact-check name", () => {
   const tools = publicToolList(backendTools);
 
   assert.deepEqual(tools.map((tool) => tool.name), [PUBLIC_SEARCH_TOOL_NAME, "get_paper_detail"]);
-  assert.equal(PUBLIC_SEARCH_TOOL_NAME, "search_paper_evidence");
+  assert.equal(PUBLIC_SEARCH_TOOL_NAME, "kadera_factcheck_with_papers");
   assert.equal(tools[0]?.title, "카더라 말고 — 논문 팩트체크");
   assert.deepEqual(tools[0]?.inputSchema.required, ["question"]);
   assert.deepEqual(Object.keys(tools[0]?.inputSchema.properties ?? {}), ["question"]);
-  assert.match(tools[0]?.description ?? "", /^건강·의학·약/);
+  assert.match(tools[0]?.description ?? "", /^사용자의 질문·주장·속설/);
   assert.match(tools[0]?.description ?? "", /크레아틴이 탈모를 일으키나요/);
-  assert.match(tools[0]?.description ?? "", /일반 질문에도/);
+  assert.match(tools[0]?.description ?? "", /논문을 언급하지 않아도/);
+  assert.match(tools[0]?.description ?? "", /교육·심리/);
   assert.match(tools[0]?.description ?? "", /\[1234-a\]/);
-  assert.match(tools[0]?.description ?? "", /카더라 말고로/);
+  assert.match(tools[0]?.description ?? "", /카더라 말고\(Kadera\)/);
   assert.match(tools[0]?.description ?? "", /완성 답변/);
   assert.ok(Buffer.byteLength(checkClaimDescription, "utf8") < 1024);
-  assert.match(tools[1]?.description ?? "", /search_paper_evidence/);
+  assert.doesNotMatch(tools[1]?.description ?? "", /search_paper_evidence/);
+  assert.match(tools[1]?.description ?? "", /kadera_factcheck_with_papers/);
 });
 
 test("does not prefix answer-writing instructions to an already completed Kadera answer", () => {

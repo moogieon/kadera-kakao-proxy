@@ -32,12 +32,12 @@ test("publishes the broad Kadera fact-check name", () => {
   assert.equal(tools[0]?.title, "카더라 말고 — 논문 팩트체크");
   assert.deepEqual(tools[0]?.inputSchema.required, ["question"]);
   assert.deepEqual(Object.keys(tools[0]?.inputSchema.properties ?? {}), ["question"]);
-  assert.match(tools[0]?.description ?? "", /^사용자의 질문·주장·속설/);
-  assert.match(tools[0]?.description ?? "", /크레아틴이 탈모를 일으키나요/);
-  assert.match(tools[0]?.description ?? "", /논문을 언급하지 않아도/);
-  assert.match(tools[0]?.description ?? "", /교육·심리/);
+  assert.match(tools[0]?.description ?? "", /^MUST CALL/);
+  assert.match(tools[0]?.description ?? "", /마운자로에대해 알려줘/);
+  assert.match(tools[0]?.description ?? "", /제로 탄산이 몸에 안좋다던데 진짜 몸에 안좋은가/);
+  assert.match(tools[0]?.description ?? "", /education/);
   assert.match(tools[0]?.description ?? "", /\[1234-a\]/);
-  assert.match(tools[0]?.description ?? "", /카더라 말고\(Kadera\)/);
+  assert.match(tools[0]?.description ?? "", /Kadera\(카더라 말고\)/);
   assert.match(tools[0]?.description ?? "", /완성 답변/);
   assert.ok(Buffer.byteLength(checkClaimDescription, "utf8") < 1024);
   assert.doesNotMatch(tools[1]?.description ?? "", /search_paper_evidence/);

@@ -30,3 +30,11 @@ Health check:
 ```text
 /healthz
 ```
+
+## Tool metadata updates
+
+`public-tool.json` controls the public search tool name, title, description and
+legacy aliases. The deployed proxy refreshes this file from GitHub every minute,
+so metadata-only changes become live after a push to `main` without a Kakao Cloud
+redeploy. Transport or runtime code changes still require one manual redeploy in
+PlayMCP in KC.

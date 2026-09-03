@@ -6,6 +6,7 @@ import {
   PUBLIC_SEARCH_TOOL_NAME,
   backendToolName,
   checkClaimDescription,
+  parsePublicToolConfig,
   publicToolList,
   reinforceSearchResult
 } from "../src/toolManifest.js";
@@ -58,6 +59,35 @@ test("maps the public intent name to the existing backend implementation", () =>
   assert.equal(backendToolName("verify_health_claim"), BACKEND_SEARCH_TOOL_NAME);
   assert.equal(backendToolName(BACKEND_SEARCH_TOOL_NAME), BACKEND_SEARCH_TOOL_NAME);
   assert.equal(backendToolName("get_paper_detail"), "get_paper_detail");
+});
+
+test("accepts safe remote metadata and maps its current and legacy names", () => {
+  const config = parsePublicToolConfig({
+    publicName: "kadera_research_factcheck",
+    title: "카더라 연구 확인",
+    description: "실제 논문으로 질문을 확인합니다.",
+    aliases: ["old_kadera_tool", "old_kadera_tool"]
+  });
+
+  assert.deepEqual(config.aliases, ["old_kadera_tool"]);
+  assert.equal(backendToolName("kadera_research_factcheck", config), BACKEND_SEARCH_TOOL_NAME);
+  assert.equal(backendToolName("old_kadera_tool", config), BACKEND_SEARCH_TOOL_NAME);
+  assert.equal(publicToolList(backendTools, config)[0]?.name, "kadera_research_factcheck");
+});
+
+test("rejects unsafe or oversized remote metadata", () => {
+  assert.throws(() => parsePublicToolConfig({
+    publicName: "invalid-name",
+    title: "카더라",
+    description: "설명",
+    aliases: []
+  }), /Invalid public tool name/);
+  assert.throws(() => parsePublicToolConfig({
+    publicName: "valid_name",
+    title: "카더라",
+    description: "가".repeat(400),
+    aliases: []
+  }), /Invalid public tool description/);
 });
 
 test("puts citation and follow-up rules before the backend evidence", () => {

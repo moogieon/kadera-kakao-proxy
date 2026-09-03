@@ -9,10 +9,12 @@ import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/
 import express from "express";
 import {
   BACKEND_SEARCH_TOOL_NAME,
-  PUBLIC_SEARCH_TOOL_NAME,
+  defaultPublicToolConfig,
   backendToolName,
+  parsePublicToolConfig,
   publicToolList,
-  reinforceSearchResult
+  reinforceSearchResult,
+  type PublicToolConfig
 } from "./toolManifest.js";
 
 const port = Number(process.env.PORT ?? 3000);
@@ -21,6 +23,13 @@ const backendTimeoutMs = Number(process.env.BACKEND_TIMEOUT_MS ?? 60000);
 const app = express();
 const rateBuckets = new Map<string, { count: number; resetAt: number }>();
 let backendToolsCache: { tools: Tool[]; expiresAt: number } | undefined;
+let publicToolConfigCache = { config: defaultPublicToolConfig, expiresAt: 0 };
+let publicToolConfigRefresh: Promise<void> | undefined;
+const publicToolConfigUrl = process.env.PUBLIC_TOOL_CONFIG_URL
+  ?? "https://raw.githubusercontent.com/moogieon/kadera-kakao-proxy/main/public-tool.json";
+
+refreshPublicToolConfig();
+setInterval(refreshPublicToolConfig, 60_000).unref();
 
 app.disable("x-powered-by");
 app.set("trust proxy", 1);
@@ -93,13 +102,16 @@ function createServer(): Server {
   // The backend owns the available implementations. Search is the deliberate
   // public override: its branded intent name helps Kakao select it, and the
   // question-only schema leaves scholarly query planning inside Kadera.
-  server.setRequestHandler(ListToolsRequestSchema, async () => ({
-    tools: publicToolList(await listBackendTools())
-  }));
+  server.setRequestHandler(ListToolsRequestSchema, async () => {
+    const publicToolConfig = loadPublicToolConfig();
+    const backendTools = await listBackendTools();
+    return { tools: publicToolList(backendTools, publicToolConfig) };
+  });
 
   server.setRequestHandler(CallToolRequestSchema, async (request) => {
+    const publicToolConfig = loadPublicToolConfig();
     const toolName = request.params.name;
-    const upstreamToolName = backendToolName(toolName);
+    const upstreamToolName = backendToolName(toolName, publicToolConfig);
     const isSearchTool = upstreamToolName === BACKEND_SEARCH_TOOL_NAME;
     const input = (request.params.arguments ?? {}) as Record<string, unknown>;
     const availableTools = await listBackendTools();
@@ -116,6 +128,43 @@ function createServer(): Server {
   });
 
   return server;
+}
+
+function loadPublicToolConfig(): PublicToolConfig {
+  if (publicToolConfigCache.expiresAt <= Date.now()) {
+    refreshPublicToolConfig();
+  }
+  return publicToolConfigCache.config;
+}
+
+function refreshPublicToolConfig(): void {
+  if (publicToolConfigRefresh) return;
+
+  publicToolConfigRefresh = (async () => {
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 3_000);
+    const separator = publicToolConfigUrl.includes("?") ? "&" : "?";
+    const cacheBust = Math.floor(Date.now() / 60_000);
+
+    try {
+      const response = await fetch(`${publicToolConfigUrl}${separator}v=${cacheBust}`, {
+        headers: { accept: "application/json" },
+        signal: controller.signal
+      });
+      if (!response.ok) throw new Error(`Public tool config ${response.status}`);
+      publicToolConfigCache = {
+        config: parsePublicToolConfig(await response.json()),
+        expiresAt: Date.now() + 60_000
+      };
+    } catch (error) {
+      console.error(`Public tool config fallback: ${error instanceof Error ? error.message : String(error)}`);
+      publicToolConfigCache.expiresAt = Date.now() + 15_000;
+    } finally {
+      clearTimeout(timeout);
+    }
+  })().finally(() => {
+    publicToolConfigRefresh = undefined;
+  });
 }
 
 /**

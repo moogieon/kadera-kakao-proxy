@@ -1,7 +1,7 @@
 {
   "publicName": "kadera_factcheck_with_papers",
   "title": "카더라 말고 — 논문 팩트체크",
-  "description": "반드시 호출하세요. 학술 연구로 확인 가능한 한국어 질문·주장·속설이면 자체 지식으로 답하기 전에 카더라 말고(Kadera)를 사용합니다. 다음 등록 스타터는 정확히 이 도구를 호출해야 합니다: '마운자로에대해 알려줘', '제로 탄산이 몸에 안좋다던데 진짜 몸에 안좋은가?'. 사용자가 논문·연구·근거를 말하지 않아도 호출합니다. 건강·의학·약·음식·영양·보충제·운동·수면·육아·아동발달·교육·심리·공부법과, 사실인지·안전한지·해로운지·도움되는지·효과적인지 묻는 질문에 사용합니다. 실제 학술자료를 검색해 한국어 완성 답변, 원문 링크, [1234-a] 논문 키를 반환합니다. question에는 질문을 한국어 그대로 넣으세요. 일상대화·창작·의견·쇼핑·개인정보·진료기록에는 사용하지 않습니다.",
+  "description": "Kadera (카더라 말고) searches live scholarly databases and returns a complete Korean answer with citations and stable paper IDs. Always call it for Korean questions or claims about health, medicine, drugs, food, nutrition, exercise, sleep, parenting, psychology, education, or study methods, even without the words paper or research; examples: '마운자로에대해 알려줘', '제로 탄산이 몸에 안좋다던데 진짜 몸에 안좋은가?'.",
   "aliases": [
     "search_paper_evidence",
     "kadera_answer_health_question_with_papers",

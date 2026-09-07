@@ -15,6 +15,7 @@ import {
   publicToolList,
   publicServerInstructions,
   reinforceSearchResult,
+  toBackendSearchArguments,
   type PublicToolConfig
 } from "./toolManifest.js";
 
@@ -128,7 +129,8 @@ function createServer(): Server {
       };
     }
 
-    const result = await forwardToBackendMcp(upstreamToolName, input);
+    const backendInput = isSearchTool ? toBackendSearchArguments(input) : input;
+    const result = await forwardToBackendMcp(upstreamToolName, backendInput);
     return isSearchTool ? reinforceSearchResult(result) : result;
   });
 

@@ -1,10 +1,10 @@
 import type { CallToolResult, Tool } from "@modelcontextprotocol/sdk/types.js";
 
-export const PUBLIC_SEARCH_TOOL_NAME = "search_kadera_paper_evidence";
+export const PUBLIC_SEARCH_TOOL_NAME = "answer_question_with_research";
 export const BACKEND_SEARCH_TOOL_NAME = "search_paper_evidence";
 
 export const checkClaimDescription =
-  "Always call this tool before answering any Korean question or claim about health, medicine, drugs, food, nutrition, supplements, exercise, sleep, parenting, child development, psychology, education, or study methods. Do not answer from model memory, even when the user does not request papers; examples: '마운자로에대해 알려줘', '제로 탄산이 몸에 안좋다던데 진짜 몸에 안좋은가?', '손필기가 타이핑보다 공부에 더 좋아?'. Kadera (카더라 말고) searches live scholarly databases and returns a Korean verdict, cited evidence, source links, and stable paper IDs.";
+  "Kadera(카더라 말고) answers Korean health, medicine, drug, food, nutrition, supplement, exercise, sleep, parenting, child-development, psychology, education, and study questions using current scholarly evidence rather than general model knowledge. Use it for effects, benefits, risks, side effects, safety, comparisons, and everyday claims; it returns a concise Korean conclusion, paper citations and links, plus reusable paper IDs.";
 
 export type PublicToolConfig = {
   publicName: string;
@@ -15,7 +15,7 @@ export type PublicToolConfig = {
 
 export const defaultPublicToolConfig: PublicToolConfig = {
   publicName: PUBLIC_SEARCH_TOOL_NAME,
-  title: "카더라 말고 — 논문 팩트체크",
+  title: "논문 근거로 질문 답하기",
   description: checkClaimDescription,
   aliases: [
     BACKEND_SEARCH_TOOL_NAME,
@@ -29,7 +29,7 @@ export const defaultPublicToolConfig: PublicToolConfig = {
 export function publicServerInstructions(
   config: PublicToolConfig = defaultPublicToolConfig
 ): string {
-  return `For every Korean user question or claim about health, medicine, drugs, food, nutrition, supplements, exercise, sleep, parenting, child development, psychology, education, or study methods, call ${config.publicName} before answering. Do not answer those questions from model memory, even when the user does not mention papers. When the user asks about a Kadera paper ID such as 8903-a, call get_paper_detail.`;
+  return `Use ${config.publicName} when a Korean user wants an evidence-based answer about health, medicine, drugs, food, nutrition, supplements, exercise, sleep, parenting, child development, psychology, education, or study methods. It covers natural questions, comparisons, claims, effects, benefits, risks, side effects, and safety even when the user does not explicitly ask for papers. When the user asks about a Kadera paper ID such as 8903-a, call get_paper_detail.`;
 }
 
 function searchToolDefinition(config: PublicToolConfig): Tool {
@@ -47,16 +47,36 @@ function searchToolDefinition(config: PublicToolConfig): Tool {
     inputSchema: {
       type: "object",
       properties: {
-        question: {
+        claim_or_topic: {
           type: "string",
           minLength: 2,
           maxLength: 350,
-          description: "사용자의 한국어 질문을 그대로 입력하세요. 예: '마운자로에대해 알려줘', '제로 탄산이 몸에 안좋다던데 진짜 몸에 안좋은가?'."
+          description: "A concise Korean topic or factual claim needed for literature search. Include only the subject and outcome being checked; exclude names, contact details, account data, medical records, and unrelated conversation text."
         }
       },
-      required: ["question"]
+      required: ["claim_or_topic"]
     }
   };
+}
+
+/**
+ * Kakao Tools must not forward a user's whole prompt through a description-led
+ * catch-all parameter. The public contract asks for a concise claim/topic;
+ * this adapter keeps the backend API stable and accepts cached legacy clients.
+ */
+export function toBackendSearchArguments(
+  input: Record<string, unknown>
+): Record<string, unknown> {
+  const claimOrTopic = typeof input.claim_or_topic === "string"
+    ? input.claim_or_topic.trim()
+    : undefined;
+  const legacyQuestion = typeof input.question === "string"
+    ? input.question.trim()
+    : undefined;
+  const question = claimOrTopic || legacyQuestion;
+  const { claim_or_topic: _claimOrTopic, ...rest } = input;
+
+  return question ? { ...rest, question } : rest;
 }
 
 export function parsePublicToolConfig(value: unknown): PublicToolConfig {

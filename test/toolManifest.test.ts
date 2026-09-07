@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 import test from "node:test";
 import type { CallToolResult, Tool } from "@modelcontextprotocol/sdk/types.js";
 import {
@@ -44,6 +45,14 @@ test("publishes a natural answer intent without repeating the MCP prefix", () =>
   assert.doesNotMatch(tools[1]?.description ?? "", /search_paper_evidence/);
   assert.match(tools[1]?.description ?? "", /answer_question_with_research/);
   assert.equal(tools[0]?.annotations?.idempotentHint, true);
+});
+
+test("keeps remotely loaded public metadata aligned with the compiled default", () => {
+  const remoteConfig = parsePublicToolConfig(JSON.parse(
+    readFileSync(new URL("../public-tool.json", import.meta.url), "utf8")
+  ));
+
+  assert.equal(remoteConfig.description, checkClaimDescription);
 });
 
 test("instructs the host to search before answering broad Korean questions", () => {

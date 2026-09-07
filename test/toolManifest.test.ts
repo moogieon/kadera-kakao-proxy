@@ -109,18 +109,49 @@ test("rejects unsafe or oversized remote metadata", () => {
   }), /Invalid public tool description/);
 });
 
-test("puts citation and follow-up rules before the backend evidence", () => {
+test("turns the duplicated backend packet into one compact Kakao-ready Markdown result", () => {
   const original: CallToolResult = {
-    content: [{ type: "text", text: "## 카더라 말고 논문 근거" }],
-    structuredContent: { papers: [{ paper_id: "1234-a" }] }
+    content: [{ type: "text", text: "## 카더라 말고 논문 근거\n매우 긴 답변 작성 지침" }],
+    structuredContent: {
+      status: "ok",
+      retrieved_paper_count: 55,
+      usable_paper_count: 1,
+      glossary: [{ term: "tirzepatide", asked_as: "마운자로" }],
+      papers: [{
+        paper_id: "1234-a",
+        title: "A useful systematic review",
+        year: 2025,
+        evidence_level: "systematic_review",
+        evidence_scope: "direct",
+        abstract_result: "RESULTS: The intervention reduced body weight by 5.2 kg compared with control.",
+        url: "https://example.com/paper"
+      }]
+    }
   };
 
   const reinforced = reinforceSearchResult(original);
   const text = reinforced.content[0]?.type === "text" ? reinforced.content[0].text : "";
 
-  assert.match(text, /^최종 답변 필수 규칙:/);
+  assert.match(text, /^## 카더라 논문 검색 완료/);
+  assert.match(text, /검색에 성공했습니다/);
+  assert.match(text, /후보 55편/);
   assert.match(text, /\[1234-a\]/);
-  assert.match(text, /별점/);
-  assert.match(text, /논문 키를 말하면/);
-  assert.deepEqual(reinforced.structuredContent, original.structuredContent);
+  assert.match(text, /5\.2 kg/);
+  assert.match(text, /원문 보기/);
+  assert.match(text, /1234-a 논문 자세히 알려줘/);
+  assert.doesNotMatch(text, /매우 긴 답변 작성 지침/);
+  assert.equal(reinforced.structuredContent, undefined);
+  assert.ok(Buffer.byteLength(JSON.stringify(reinforced), "utf8") < 4_000);
+});
+
+test("keeps a completed Korean answer but removes duplicate structured evidence", () => {
+  const answer = "## 현재 판단\n**한줄 결론:** 완성된 답변입니다.";
+  const completed = reinforceSearchResult({
+    content: [{ type: "text", text: answer }],
+    structuredContent: { papers: [{ abstract_result: "duplicated" }] }
+  });
+
+  assert.equal(completed.content[0]?.type, "text");
+  if (completed.content[0]?.type === "text") assert.equal(completed.content[0].text, answer);
+  assert.equal(completed.structuredContent, undefined);
 });

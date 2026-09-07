@@ -126,18 +126,126 @@ export function backendToolName(
     : publicName;
 }
 
-const finalAnswerRules =
-  "최종 답변 필수 규칙: 아래 논문 자료만 사용하세요. 논문 제목은 자연스러운 한국어로 쓰고, 대표 논문마다 결과에 있는 [1234-a] 형식의 실제 키와 '원문 보기' 링크를 반드시 표시하세요. 별점·임의 평가·자료에 없는 수치를 추가하지 마세요. 마지막에는 '논문 키를 말하면 해당 초록을 한국어로 자세히 볼 수 있다'고 안내하세요.";
-
 export function reinforceSearchResult(result: CallToolResult): CallToolResult {
-  let prefixed = false;
-  return {
-    ...result,
-    content: result.content.map((item) => {
-      if (prefixed || item.type !== "text") return item;
-      prefixed = true;
-      if (item.text.trimStart().startsWith("## 현재 판단")) return item;
-      return { ...item, text: `${finalAnswerRules}\n\n${item.text}` };
-    })
-  };
+  // Kakao's integration guide asks tools to return a small, curated Markdown
+  // result. The backend packet intentionally contains detailed host-writing
+  // policy and also repeats every abstract in structuredContent; forwarding it
+  // produced a 13 KB response that ChatGPT for Kakao treated as if the search
+  // had not answered. Keep a completed answer as-is, otherwise turn the
+  // structured evidence into one compact text payload and drop the duplicate.
+  const firstText = result.content.find((item) => item.type === "text");
+  const completedAnswer = firstText?.type === "text" && firstText.text.trimStart().startsWith("## 현재 판단")
+    ? firstText.text
+    : undefined;
+  const compactEvidence = completedAnswer ? undefined : formatCompactEvidence(result.structuredContent);
+  const text = completedAnswer ?? compactEvidence ?? (firstText?.type === "text" ? firstText.text : undefined);
+  const { structuredContent: _duplicateEvidence, ...rest } = result;
+  if (!text) return rest;
+  return { ...rest, content: [{ type: "text", text }] };
+}
+
+type EvidencePayload = {
+  status?: unknown;
+  retrieved_paper_count?: unknown;
+  usable_paper_count?: unknown;
+  glossary?: unknown;
+  papers?: unknown;
+};
+
+type EvidencePaper = {
+  paper_id?: unknown;
+  title?: unknown;
+  year?: unknown;
+  evidence_level?: unknown;
+  evidence_scope?: unknown;
+  abstract_result?: unknown;
+  url?: unknown;
+};
+
+function formatCompactEvidence(value: unknown): string | undefined {
+  if (!value || typeof value !== "object") return undefined;
+  const payload = value as EvidencePayload;
+  if (payload.status !== "ok" || !Array.isArray(payload.papers)) return undefined;
+  const papers = payload.papers
+    .filter((paper): paper is EvidencePaper => Boolean(paper) && typeof paper === "object")
+    .slice(0, 5);
+  if (papers.length === 0) return undefined;
+
+  const retrieved = finiteInteger(payload.retrieved_paper_count) ?? papers.length;
+  const usable = finiteInteger(payload.usable_paper_count) ?? papers.length;
+  const glossary = Array.isArray(payload.glossary)
+    ? payload.glossary.flatMap((entry) => {
+        if (!entry || typeof entry !== "object") return [];
+        const item = entry as { term?: unknown; asked_as?: unknown };
+        return typeof item.term === "string" && typeof item.asked_as === "string"
+          ? [`${item.term} = ${item.asked_as}`]
+          : [];
+      }).slice(0, 3)
+    : [];
+  const blocks = papers.map((paper) => {
+    const id = safeText(paper.paper_id, 12) ?? "논문 키 없음";
+    const title = safeText(paper.title, 180) ?? "제목 정보 없음";
+    const year = finiteInteger(paper.year);
+    const result = safeText(paper.abstract_result, 320) ?? "초록에서 결과 문장을 확인하지 못했습니다.";
+    const url = safeHttpUrl(paper.url);
+    const metadata = [year ? `${year}년` : undefined, evidenceLevelKo(paper.evidence_level), evidenceScopeKo(paper.evidence_scope)]
+      .filter(Boolean)
+      .join(" · ");
+    return [
+      `### [${id}] ${title}`,
+      ...(metadata ? [`- ${metadata}`] : []),
+      `- 초록 결과: ${result}`,
+      ...(url ? [`- [원문 보기](${url})`] : [])
+    ].join("\n");
+  });
+  const followUpId = safeText(papers[0]?.paper_id, 12);
+
+  return [
+    "## 카더라 논문 검색 완료",
+    `검색에 성공했습니다. 초록이 있는 후보 ${retrieved}편 중 대표 논문 ${usable}편을 확인했습니다.`,
+    ...(glossary.length > 0 ? [`용어 대응: ${glossary.join(" · ")}`] : []),
+    "아래 초록 결과만 근거로 질문에 먼저 한 문장으로 답한 뒤, 핵심 수치와 한계를 자연스러운 한국어로 설명하세요. 관찰된 연관성을 인과관계로 바꾸거나 논문에 없는 사실을 추가하지 마세요.",
+    ...blocks,
+    ...(followUpId
+      ? ["## 논문을 더 자세히 보고 싶다면", `“${followUpId} 논문 자세히 알려줘”라고 물으면 저장된 초록을 한국어로 자세히 확인할 수 있습니다.`]
+      : [])
+  ].join("\n\n");
+}
+
+function safeText(value: unknown, maxLength: number): string | undefined {
+  if (typeof value !== "string") return undefined;
+  const text = value.replace(/\s+/g, " ").trim();
+  if (!text) return undefined;
+  return text.length > maxLength ? `${text.slice(0, maxLength - 1).trimEnd()}…` : text;
+}
+
+function finiteInteger(value: unknown): number | undefined {
+  return typeof value === "number" && Number.isFinite(value) ? Math.trunc(value) : undefined;
+}
+
+function safeHttpUrl(value: unknown): string | undefined {
+  if (typeof value !== "string") return undefined;
+  try {
+    const url = new URL(value);
+    return url.protocol === "https:" || url.protocol === "http:" ? url.toString() : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+function evidenceLevelKo(value: unknown): string | undefined {
+  if (value === "systematic_review") return "체계적 문헌고찰·메타분석";
+  if (value === "clinical_study") return "임상·비교 연구";
+  if (value === "observational_study") return "관찰연구";
+  if (value === "official_guidance") return "공식 지침";
+  return undefined;
+}
+
+function evidenceScopeKo(value: unknown): string | undefined {
+  if (value === "direct") return "질문을 직접 다룬 근거";
+  if (value === "parent") return "상위 주제 보완 근거";
+  if (value === "topic_context") return "질문 대상 보완 근거";
+  if (value === "outcome_context") return "질문 결과 보완 근거";
+  if (value === "related") return "관련 참고 근거";
+  return undefined;
 }

@@ -4,7 +4,7 @@ export const PUBLIC_SEARCH_TOOL_NAME = "answer_question_with_research";
 export const BACKEND_SEARCH_TOOL_NAME = "search_paper_evidence";
 
 export const checkClaimDescription =
-  "Kadera(카더라 말고) answers Korean health, medicine, drug, food, nutrition, supplement, exercise, sleep, parenting, child-development, psychology, education, and study questions using current scholarly evidence rather than general model knowledge. Use it for effects, benefits, risks, side effects, safety, comparisons, and everyday claims; it returns a concise Korean conclusion, paper citations and links, plus reusable paper IDs.";
+  "Kadera(카더라 말고) answers Korean health, medicine, drug, food, nutrition, supplement, exercise, sleep, parenting, child-development, psychology, education, and study questions using current scholarly evidence rather than general model knowledge. Use it for effects, benefits, risks, side effects, safety, comparisons, and everyday claims. It returns a concise Korean conclusion, paper citations and links, plus reusable paper IDs; preserve those IDs and links in the answer so the user can request a paper detail.";
 
 export type PublicToolConfig = {
   publicName: string;
@@ -29,7 +29,7 @@ export const defaultPublicToolConfig: PublicToolConfig = {
 export function publicServerInstructions(
   config: PublicToolConfig = defaultPublicToolConfig
 ): string {
-  return `Use ${config.publicName} when a Korean user wants an evidence-based answer about health, medicine, drugs, food, nutrition, supplements, exercise, sleep, parenting, child development, psychology, education, or study methods. It covers natural questions, comparisons, claims, effects, benefits, risks, side effects, and safety even when the user does not explicitly ask for papers. When the user asks about a Kadera paper ID such as 8903-a, call get_paper_detail.`;
+  return `Use ${config.publicName} when a Korean user wants an evidence-based answer about health, medicine, drugs, food, nutrition, supplements, exercise, sleep, parenting, child development, psychology, education, or study methods. It covers natural questions, comparisons, claims, effects, benefits, risks, side effects, and safety even when the user does not explicitly ask for papers. Preserve returned paper IDs and source links in the final answer. When the user asks about a Kadera paper ID such as 8903-a, call get_paper_detail.`;
 }
 
 function searchToolDefinition(config: PublicToolConfig): Tool {
@@ -204,7 +204,7 @@ function formatCompactEvidence(value: unknown): string | undefined {
     "## 카더라 논문 검색 완료",
     `검색에 성공했습니다. 초록이 있는 후보 ${retrieved}편 중 대표 논문 ${usable}편을 확인했습니다.`,
     ...(glossary.length > 0 ? [`용어 대응: ${glossary.join(" · ")}`] : []),
-    "아래 초록 결과만 근거로 질문에 먼저 한 문장으로 답한 뒤, 핵심 수치와 한계를 자연스러운 한국어로 설명하세요. 관찰된 연관성을 인과관계로 바꾸거나 논문에 없는 사실을 추가하지 마세요.",
+    "아래 초록 결과만 근거로 질문에 먼저 한 문장으로 답한 뒤, 핵심 수치와 한계를 자연스러운 한국어로 설명하세요. 관찰된 연관성을 인과관계로 바꾸거나 논문에 없는 사실을 추가하지 마세요. 근거 문장에는 해당 논문 키를 [4656-j]처럼 표시하고, 논문 키와 원문 링크를 생략하지 마세요.",
     ...blocks,
     ...(followUpId
       ? ["## 논문을 더 자세히 보고 싶다면", `“${followUpId} 논문 자세히 알려줘”라고 물으면 저장된 초록을 한국어로 자세히 확인할 수 있습니다.`]

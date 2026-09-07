@@ -39,6 +39,7 @@ test("publishes a natural answer intent without repeating the MCP prefix", () =>
   assert.match(tools[0]?.description ?? "", /education/);
   assert.match(tools[0]?.description ?? "", /effects, benefits, risks, side effects, safety, comparisons/);
   assert.match(tools[0]?.description ?? "", /reusable paper IDs/);
+  assert.match(tools[0]?.description ?? "", /preserve those IDs and links/);
   assert.ok(Buffer.byteLength(checkClaimDescription, "utf8") < 800);
   assert.doesNotMatch(tools[1]?.description ?? "", /search_paper_evidence/);
   assert.match(tools[1]?.description ?? "", /answer_question_with_research/);
@@ -49,6 +50,7 @@ test("instructs the host to search before answering broad Korean questions", () 
   const instructions = publicServerInstructions();
   assert.match(instructions, /Use answer_question_with_research/);
   assert.match(instructions, /evidence-based answer/);
+  assert.match(instructions, /Preserve returned paper IDs and source links/);
   assert.match(instructions, /call get_paper_detail/);
 });
 
@@ -139,6 +141,7 @@ test("turns the duplicated backend packet into one compact Kakao-ready Markdown 
   assert.match(text, /5\.2 kg/);
   assert.match(text, /원문 보기/);
   assert.match(text, /1234-a 논문 자세히 알려줘/);
+  assert.match(text, /논문 키와 원문 링크를 생략하지 마세요/);
   assert.doesNotMatch(text, /매우 긴 답변 작성 지침/);
   assert.equal(reinforced.structuredContent, undefined);
   assert.ok(Buffer.byteLength(JSON.stringify(reinforced), "utf8") < 4_000);

@@ -1,10 +1,10 @@
 import type { CallToolResult, Tool } from "@modelcontextprotocol/sdk/types.js";
 
-export const PUBLIC_SEARCH_TOOL_NAME = "kadera_factcheck_with_papers";
+export const PUBLIC_SEARCH_TOOL_NAME = "search_kadera_paper_evidence";
 export const BACKEND_SEARCH_TOOL_NAME = "search_paper_evidence";
 
 export const checkClaimDescription =
-  "Kadera (카더라 말고) searches live scholarly databases and returns a complete Korean answer with citations and stable paper IDs. Always call it for Korean questions or claims about health, medicine, drugs, food, nutrition, exercise, sleep, parenting, psychology, education, or study methods, even without the words paper or research; examples: '마운자로에대해 알려줘', '제로 탄산이 몸에 안좋다던데 진짜 몸에 안좋은가?'.";
+  "Always call this tool before answering any Korean question or claim about health, medicine, drugs, food, nutrition, supplements, exercise, sleep, parenting, child development, psychology, education, or study methods. Do not answer from model memory, even when the user does not request papers; examples: '마운자로에대해 알려줘', '제로 탄산이 몸에 안좋다던데 진짜 몸에 안좋은가?', '손필기가 타이핑보다 공부에 더 좋아?'. Kadera (카더라 말고) searches live scholarly databases and returns a Korean verdict, cited evidence, source links, and stable paper IDs.";
 
 export type PublicToolConfig = {
   publicName: string;
@@ -19,11 +19,18 @@ export const defaultPublicToolConfig: PublicToolConfig = {
   description: checkClaimDescription,
   aliases: [
     BACKEND_SEARCH_TOOL_NAME,
+    "kadera_factcheck_with_papers",
     "kadera_answer_health_question_with_papers",
     "answer_health_question_with_papers",
     "verify_health_claim"
   ]
 };
+
+export function publicServerInstructions(
+  config: PublicToolConfig = defaultPublicToolConfig
+): string {
+  return `For every Korean user question or claim about health, medicine, drugs, food, nutrition, supplements, exercise, sleep, parenting, child development, psychology, education, or study methods, call ${config.publicName} before answering. Do not answer those questions from model memory, even when the user does not mention papers. When the user asks about a Kadera paper ID such as 8903-a, call get_paper_detail.`;
+}
 
 function searchToolDefinition(config: PublicToolConfig): Tool {
   return {
@@ -34,7 +41,7 @@ function searchToolDefinition(config: PublicToolConfig): Tool {
       title: config.title,
       readOnlyHint: true,
       destructiveHint: false,
-      idempotentHint: false,
+      idempotentHint: true,
       openWorldHint: true
     },
     inputSchema: {

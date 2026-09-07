@@ -13,6 +13,7 @@ import {
   backendToolName,
   parsePublicToolConfig,
   publicToolList,
+  publicServerInstructions,
   reinforceSearchResult,
   type PublicToolConfig
 } from "./toolManifest.js";
@@ -94,9 +95,13 @@ app.listen(port, () => {
 });
 
 function createServer(): Server {
+  const publicToolConfig = loadPublicToolConfig();
   const server = new Server(
     { name: "kadera-kakao-proxy", version: "0.1.0" },
-    { capabilities: { tools: { listChanged: true } } }
+    {
+      capabilities: { tools: { listChanged: true } },
+      instructions: publicServerInstructions(publicToolConfig)
+    }
   );
 
   // The backend owns the available implementations. Search is the deliberate

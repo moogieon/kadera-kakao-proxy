@@ -7,6 +7,7 @@ import {
   backendToolName,
   checkClaimDescription,
   parsePublicToolConfig,
+  publicServerInstructions,
   publicToolList,
   reinforceSearchResult
 } from "../src/toolManifest.js";
@@ -28,21 +29,30 @@ test("publishes the broad Kadera fact-check name", () => {
   const tools = publicToolList(backendTools);
 
   assert.deepEqual(tools.map((tool) => tool.name), [PUBLIC_SEARCH_TOOL_NAME, "get_paper_detail"]);
-  assert.equal(PUBLIC_SEARCH_TOOL_NAME, "kadera_factcheck_with_papers");
+  assert.equal(PUBLIC_SEARCH_TOOL_NAME, "search_kadera_paper_evidence");
   assert.equal(tools[0]?.title, "카더라 말고 — 논문 팩트체크");
   assert.deepEqual(tools[0]?.inputSchema.required, ["question"]);
   assert.deepEqual(Object.keys(tools[0]?.inputSchema.properties ?? {}), ["question"]);
-  assert.match(tools[0]?.description ?? "", /^Kadera \(카더라 말고\) searches/);
-  assert.match(tools[0]?.description ?? "", /Always call/);
+  assert.match(tools[0]?.description ?? "", /^Always call this tool before answering/);
+  assert.match(tools[0]?.description ?? "", /Do not answer from model memory/);
   assert.match(tools[0]?.description ?? "", /마운자로에대해 알려줘/);
   assert.match(tools[0]?.description ?? "", /제로 탄산이 몸에 안좋다던데 진짜 몸에 안좋은가/);
+  assert.match(tools[0]?.description ?? "", /손필기가 타이핑보다 공부에 더 좋아/);
   assert.match(tools[0]?.description ?? "", /education/);
   assert.match(tools[0]?.description ?? "", /stable paper IDs/);
   assert.match(tools[0]?.description ?? "", /Kadera \(카더라 말고\)/);
-  assert.match(tools[0]?.description ?? "", /complete Korean answer/);
-  assert.ok(Buffer.byteLength(checkClaimDescription, "utf8") < 700);
+  assert.match(tools[0]?.description ?? "", /Korean verdict/);
+  assert.ok(Buffer.byteLength(checkClaimDescription, "utf8") < 800);
   assert.doesNotMatch(tools[1]?.description ?? "", /search_paper_evidence/);
-  assert.match(tools[1]?.description ?? "", /kadera_factcheck_with_papers/);
+  assert.match(tools[1]?.description ?? "", /search_kadera_paper_evidence/);
+  assert.equal(tools[0]?.annotations?.idempotentHint, true);
+});
+
+test("instructs the host to search before answering broad Korean questions", () => {
+  const instructions = publicServerInstructions();
+  assert.match(instructions, /call search_kadera_paper_evidence before answering/);
+  assert.match(instructions, /Do not answer those questions from model memory/);
+  assert.match(instructions, /call get_paper_detail/);
 });
 
 test("does not prefix answer-writing instructions to an already completed Kadera answer", () => {

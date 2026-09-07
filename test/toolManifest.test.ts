@@ -142,6 +142,7 @@ test("turns the duplicated backend packet into one compact Kakao-ready Markdown 
   assert.match(text, /원문 보기/);
   assert.match(text, /1234-a 논문 자세히 알려줘/);
   assert.match(text, /논문 키와 원문 링크를 생략하지 마세요/);
+  assert.match(text, /초록에 없는 하루 섭취량·권장량·안전 기준을 만들지 마세요/);
   assert.doesNotMatch(text, /매우 긴 답변 작성 지침/);
   assert.equal(reinforced.structuredContent, undefined);
   assert.ok(Buffer.byteLength(JSON.stringify(reinforced), "utf8") < 4_000);

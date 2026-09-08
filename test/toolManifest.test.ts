@@ -10,6 +10,7 @@ import {
   parsePublicToolConfig,
   publicServerInstructions,
   publicToolList,
+  reinforcePaperDetailResult,
   reinforceSearchResult,
   toBackendSearchArguments
 } from "../src/toolManifest.js";
@@ -167,4 +168,16 @@ test("keeps a completed Korean answer but removes duplicate structured evidence"
   assert.equal(completed.content[0]?.type, "text");
   if (completed.content[0]?.type === "text") assert.equal(completed.content[0].text, answer);
   assert.equal(completed.structuredContent, undefined);
+});
+
+test("removes the duplicate English abstract from paper detail results", () => {
+  const abstract = "BACKGROUND: A complete source abstract for Korean explanation.";
+  const reinforced = reinforcePaperDetailResult({
+    content: [{ type: "text", text: `## [1234-a] 논문 상세 자료\n\n${abstract}` }],
+    structuredContent: { paper_id: "1234-a", abstract_original: abstract }
+  });
+
+  assert.equal(reinforced.structuredContent, undefined);
+  assert.equal(reinforced.content[0]?.type, "text");
+  assert.equal((JSON.stringify(reinforced).match(new RegExp(abstract, "g")) ?? []).length, 1);
 });

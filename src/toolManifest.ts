@@ -144,6 +144,17 @@ export function reinforceSearchResult(result: CallToolResult): CallToolResult {
   return { ...rest, content: [{ type: "text", text }] };
 }
 
+/**
+ * The detail tool already includes every field and the source abstract in its
+ * curated text payload. Forwarding structuredContent repeats the same English
+ * abstract and makes it more likely that the host copies it instead of
+ * producing the requested Korean explanation.
+ */
+export function reinforcePaperDetailResult(result: CallToolResult): CallToolResult {
+  const { structuredContent: _duplicateDetail, ...rest } = result;
+  return rest;
+}
+
 type EvidencePayload = {
   status?: unknown;
   retrieved_paper_count?: unknown;

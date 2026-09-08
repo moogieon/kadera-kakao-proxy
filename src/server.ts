@@ -14,6 +14,7 @@ import {
   parsePublicToolConfig,
   publicToolList,
   publicServerInstructions,
+  reinforcePaperDetailResult,
   reinforceSearchResult,
   toBackendSearchArguments,
   type PublicToolConfig
@@ -119,6 +120,7 @@ function createServer(): Server {
     const toolName = request.params.name;
     const upstreamToolName = backendToolName(toolName, publicToolConfig);
     const isSearchTool = upstreamToolName === BACKEND_SEARCH_TOOL_NAME;
+    const isPaperDetailTool = upstreamToolName === "get_paper_detail";
     const input = (request.params.arguments ?? {}) as Record<string, unknown>;
     const availableTools = await listBackendTools();
 
@@ -131,7 +133,9 @@ function createServer(): Server {
 
     const backendInput = isSearchTool ? toBackendSearchArguments(input) : input;
     const result = await forwardToBackendMcp(upstreamToolName, backendInput);
-    return isSearchTool ? reinforceSearchResult(result) : result;
+    if (isSearchTool) return reinforceSearchResult(result);
+    if (isPaperDetailTool) return reinforcePaperDetailResult(result);
+    return result;
   });
 
   return server;

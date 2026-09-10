@@ -4,7 +4,7 @@ export const PUBLIC_SEARCH_TOOL_NAME = "answer_question_with_research";
 export const BACKEND_SEARCH_TOOL_NAME = "search_paper_evidence";
 
 export const checkClaimDescription =
-  "Kadera(카더라 말고) answers Korean health, medicine, drug, food, nutrition, supplement, exercise, sleep, parenting, child-development, psychology, education, and study questions using current scholarly evidence rather than general model knowledge. Use it for effects, benefits, risks, side effects, safety, comparisons, and everyday claims. It returns a concise Korean conclusion, paper citations and links, plus reusable paper IDs; preserve those IDs and links in the answer so the user can request a paper detail.";
+  "Kadera(카더라 말고) answers Korean health, medicine, drug, food, nutrition, supplement, exercise, sleep, parenting, child-development, psychology, education, and study questions using current scholarly evidence rather than general model knowledge. Use it for effects, benefits, risks, side effects, safety, comparisons, and everyday claims. It returns a concise Korean conclusion, paper citations and links, plus reusable paper IDs; preserve those IDs and links in the answer so the user can request a paper detail. Keep study populations and evidence certainty in conclusions; do not invent clock times, doses or advice.";
 
 export type PublicToolConfig = {
   publicName: string;
